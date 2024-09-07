@@ -1,6 +1,7 @@
 import { User } from "../models/userModel.js"
 import bcryptjs from "bcryptjs"
 import { generateTokenAndSetCookie } from "../utils/generateTokenAndSetCookie.js"
+import { sendVerificationEmail } from "../mailtrap/emails.js"
 
 export const signupController = async (req,res)=>{
     const{email,password,name}=req.body
@@ -29,6 +30,7 @@ export const signupController = async (req,res)=>{
 
             //jwt
             generateTokenAndSetCookie(res,user._id)
+            await sendVerificationEmail(user.email,verificationToken)
             res.status(200).send({
                 success: true,
                 message: "user registered successfully",
