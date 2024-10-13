@@ -2,7 +2,8 @@ import mongoose from "mongoose";
 
 
 const userSchema =  new mongoose.Schema({
-    email:{
+    
+    userNic:{
         type: String,
         required: true,
     },
@@ -10,10 +11,7 @@ const userSchema =  new mongoose.Schema({
         type: String,
         required: true,
     },
-    name:{
-        type: String,
-        required: true,
-    },
+    
     lastLogin:{
         type: Date,
         default: Date.now,

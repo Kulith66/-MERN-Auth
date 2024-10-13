@@ -31,30 +31,36 @@ export const sendWelcomeEmail =async (email,name) => {
         },
        
       });
-      console.log("Welcome email sent successfully",response)
+      console.log("Welcome email sent successfully")
     } catch (error) {
       console.error("Error sending email",error)
       throw new Error(`Error sending email: ${error.message}`);
     }
 };
 export const sendPasswordResetEmail = async (email, resetUrl) => {
+  if (!email) {
+    throw new Error("Recipient email is required");
+  }
+
   const recipient = [{ email }];
+
   try {
     const response = await mailtrapClient.send({
-      from: sender,
-      to: recipient,
+      from: sender, // Ensure 'sender' is defined correctly
+      to: recipient, // Make sure this is an array with a valid email
       subject: "Reset Your Password",
       html: PASSWORD_RESET_REQUEST_TEMPLATE.replace("{resetUrl}", resetUrl),
-      category: "password Reset"
+      category: "password Reset",
     });
 
     console.log("Password reset email sent successfully", response);
-    console.log(resetUrl)
+    console.log("Reset URL:", resetUrl);
   } catch (error) {
-    console.error("Error sending password reset email", error);
-    throw new Error(`Error sending password reset email: ${error}`);
+    console.error("Error sending password reset email:", error.response?.data || error.message);
+    throw new Error(`Error sending password reset email: ${error.message}`);
   }
 };
+
 
 
 

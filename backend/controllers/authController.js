@@ -1,29 +1,30 @@
 import { User } from "../models/userModel.js"
 import bcryptjs from "bcryptjs"
 import crypto from "crypto";
-
+import JWT from "jsonwebtoken"
 import { generateTokenAndSetCookie } from "../utils/generateTokenAndSetCookie.js"
 import { sendPasswordResetEmail, sendResetSuccessEmail, sendVerificationEmail, sendWelcomeEmail } from "../mailtrap/emails.js"
+import { Employee } from "../models/employee/employeeModel.js";
 
-export const signupController = async (req,res)=>{
-    const{email,password,name}=req.body
+export const AdminSignupController = async (req,res)=>{
+    const{userNic,password}=req.body
     try {
-        if(!email || !password || !name){
+        if(!userNic || !password){
             throw new Error("all  fields are required")
         }
-        const userAlredyExists = await User.findOne({email})
+        const userAlredyExists = await User.findOne({userNic})
         if(userAlredyExists){
             return res.status(400).send({
                 success: false,
                 message: "user already exists"
             })
             }
+        
             const hashedPassword = await bcryptjs.hash(password,10)
             const verificationToken = Math.floor(1000 + Math.random() * 9000).toString();
             const user = new User({
-                email,
+                userNic,
                 password: hashedPassword,
-                name ,
                 verificationToken,
                 verificationTokenExpireAt:Date.now()+24*60*60*1000
 
@@ -31,15 +32,14 @@ export const signupController = async (req,res)=>{
             await user.save()
 
             //jwt
-            generateTokenAndSetCookie(res,user._id)
-            await sendVerificationEmail(user.email,verificationToken)
+            const token = generateTokenAndSetCookie(res,user._id)
             res.status(200).send({
                 success: true,
                 message: "user registered successfully",
                 user:{
                     ...user._doc,
                     password :undefined
-                }
+                },token
             })
 
     } catch (error) {
@@ -50,10 +50,83 @@ export const signupController = async (req,res)=>{
     }
 
 }
+export const employeeSignupController = async (req, res) => {
+    const { userNic, password } = req.body;
+
+    try {
+        // Ensure NIC and password are provided
+        if (!userNic || !password) {
+            throw new Error("All fields are required");
+        }
+
+        // Check if the user already exists
+        const userAlreadyExists = await User.findOne({ userNic });
+        if (userAlreadyExists) {
+            return res.status(400).send({
+                success: false,
+                message: "User already exists",
+            });
+        }
+
+        console.log(userNic);
+
+        // Check if admin approval exists for this employee
+        const isAdminApproved = await Employee.findOne({ employeeNIC: userNic });
+        if (!isAdminApproved) {
+            return res.status(401).send({
+                success: false,
+                message: "Admin approval is required",
+            });
+        }
+
+        // Hash the password
+        const hashedPassword = await bcryptjs.hash(password, 10);
+
+        // Generate a verification token
+        const verificationToken = Math.floor(1000 + Math.random() * 9000).toString();
+
+        // Create new user (ensure all required fields are included)
+        const user = new User({
+            userNic, // Assuming userNic is part of User schema
+            password: hashedPassword,
+            verificationToken,
+            verificationTokenExpireAt: Date.now() + 24 * 60 * 60 * 1000, // Token expiration time (24 hours)
+        });
+
+        // Save the user to the database
+        await user.save();
+
+        // Generate JWT token and set it as a cookie
+        const token = generateTokenAndSetCookie(res, user._id);
+
+        // Optionally, send the verification email (uncomment if needed)
+        // await sendVerificationEmail(user.email, verificationToken);
+
+        // Respond with success and omit the password from the response
+        res.status(200).send({
+            success: true,
+            message: "User registered successfully",
+            user: {
+                ...user._doc,
+                password: undefined, // Don't send the hashed password in the response
+            },
+            token,
+        });
+
+    } catch (error) {
+        // Handle any errors
+        res.status(400).send({
+            success: false,
+            message: error.message,
+        });
+    }
+};
+
+
 export const loginController = async (req,res)=>{
     try{
-        const {email,password} = req.body;
-        const user = await User.findOne({email});
+        const {userNic,password} = req.body;
+        const user = await User.findOne({userNic});
 
         if(!user){
             return res.status(400).send({
@@ -68,7 +141,7 @@ export const loginController = async (req,res)=>{
                 message:"invalid credentials"
             })
         }
-        generateTokenAndSetCookie(res,user._id)
+        const token = JWT.sign({_id:user._id},process.env.JWT_SECRET,{expiresIn:"7d"})
         user.lastLogin = new Date()
         await user.save()
         res.status(200).send({
@@ -78,6 +151,7 @@ export const loginController = async (req,res)=>{
                 ...user._doc,
                 password:undefined,
             },
+            token
         })
     }
     catch(error){
@@ -123,7 +197,7 @@ export const emailVerifyController = async (req, res) => {
         await user.save();
 
         // Optionally handle email in the background using a job queue if it's a performance issue
-        sendWelcomeEmail(user.email, user.name).catch((err) => console.error("Email sending failed", err));
+        sendWelcomeEmail(user.email).catch((err) => console.error("Email sending failed", err));
 
         return res.status(200).json({
             success: true,
@@ -143,15 +217,16 @@ export const emailVerifyController = async (req, res) => {
 };
 
 
-export const forgotPasswordController = async (req, res) => {
-    const { email } = req.body;
 
-    if (!email) {
-        return res.status(400).json({ success: false, message: "Email is required" });
+export const forgotPasswordController = async (req, res) => {
+    const { userNic, email } = req.body;
+
+    if (!userNic || !email) {
+        return res.status(400).json({ success: false, message: "NIC and email are required" });
     }
 
     try {
-        const user = await User.findOne({ email });
+        const user = await User.findOne({ userNic });
 
         // Send the same response regardless of whether the user exists for security reasons
         if (!user) {
@@ -163,18 +238,18 @@ export const forgotPasswordController = async (req, res) => {
 
         // Generate reset token and expiration
         const resetToken = crypto.randomBytes(20).toString("hex");
-        const resetTokenExpireAt = Date.now() + 1 * 60 * 60 * 1000; // 1-hour expiration
+        const resetTokenExpireAt = Date.now() + 3600000; // 1-hour expiration
 
         // Update user with reset token and expiration
         user.resetPasswordToken = resetToken;
         user.resetPasswordExpireAt = resetTokenExpireAt;
         await user.save();
-
+        console.log(email)
         // Build the reset URL
         const resetUrl = `${process.env.CLIENT_URL}/forgot-password/${resetToken}`;
 
         // Send password reset email
-        await sendPasswordResetEmail(user.email, resetUrl);
+        await sendPasswordResetEmail(email, resetUrl);  // Ensure `user.email` is valid
 
         return res.status(200).json({
             success: true,
@@ -184,7 +259,7 @@ export const forgotPasswordController = async (req, res) => {
         console.error("Error in forgot password process:", error);
         return res.status(500).json({
             success: false,
-            message: "An error occurred while processing the request",
+            message: "An error occurred while processing the request.",
         });
     }
 };
@@ -256,4 +331,9 @@ export const checkAuthController = async (req,res)=>{
         console.log("error in checkAuthController",error);
         res.status(400).json({success: false, message:error.message});
     }
+}
+
+export const testController = (req,res)=>{
+    console.log("protected routes")
+    res.send("protected routes")
 }

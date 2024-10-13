@@ -11,5 +11,6 @@ export const generateTokenAndSetCookie = (res, userId) =>{
         sameSite:"Strict",
         maxAge:7*24*60*60*100
     });
+    
     return token;
 }
